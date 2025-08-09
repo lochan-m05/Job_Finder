@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: job_discovery_mongodb_dev
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: job_discovery_dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_dev_data:/data/db
+    networks:
+      - job_discovery_dev_network
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: job_discovery_redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - job_discovery_dev_network
+
+  # Backend API in development mode
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: job_discovery_backend_dev
+    restart: unless-stopped
+    environment:
+      MONGODB_URL: mongodb://admin:password123@mongodb:27017/job_discovery_dev?authSource=admin
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: dev-secret-key-not-for-production
+      PYTHONPATH: /app
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./logs:/app/logs
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - job_discovery_dev_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker for development
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: job_discovery_celery_worker_dev
+    restart: unless-stopped
+    environment:
+      MONGODB_URL: mongodb://admin:password123@mongodb:27017/job_discovery_dev?authSource=admin
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: dev-secret-key-not-for-production
+      PYTHONPATH: /app
+      DEBUG: "true"
+    volumes:
+      - ./backend:/app
+      - ./logs:/app/logs
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - job_discovery_dev_network
+    command: celery -A app.services.celery_app worker --loglevel=debug --concurrency=2
+
+  # Frontend in development mode
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: job_discovery_frontend_dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true
+      - FAST_REFRESH=false
+    depends_on:
+      - backend
+    networks:
+      - job_discovery_dev_network
+    stdin_open: true
+    tty: true
+
+  # Flower for Celery monitoring
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: job_discovery_flower_dev
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    networks:
+      - job_discovery_dev_network
+    command: celery -A app.services.celery_app flower --port=5555
+
+  # Jupyter for data analysis and development
+  jupyter:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: job_discovery_jupyter_dev
+    restart: unless-stopped
+    environment:
+      MONGODB_URL: mongodb://admin:password123@mongodb:27017/job_discovery_dev?authSource=admin
+      REDIS_URL: redis://redis:6379/0
+      PYTHONPATH: /app
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./backend:/app
+      - ./notebooks:/app/notebooks
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - job_discovery_dev_network
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+
+volumes:
+  mongodb_dev_data:
+  redis_dev_data:
+
+networks:
+  job_discovery_dev_network:
+    driver: bridge
