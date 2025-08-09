@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CORS Test</title>
+</head>
+<body>
+    <h1>Testing CORS Fix...</h1>
+    <div id="result"></div>
+    
+    <script>
+        async function testCORS() {
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                // Test simple GET request
+                const response1 = await fetch('http://127.0.0.1:8000/health');
+                const data1 = await response1.json();
+                console.log('GET request successful:', data1);
+                
+                // Test POST request (the one that was failing)
+                const response2 = await fetch('http://127.0.0.1:8000/api/scrape-jobs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        hashtags: ["#test"],
+                        time_filter: "24h",
+                        sources: ["linkedin"]
+                    })
+                });
+                const data2 = await response2.json();
+                console.log('POST request successful:', data2);
+                
+                resultDiv.innerHTML = `
+                    <h2 style="color: green;">✅ CORS Fix Successful!</h2>
+                    <p><strong>GET Health Check:</strong> ${data1.status}</p>
+                    <p><strong>POST Scraping:</strong> ${data2.message}</p>
+                    <p style="color: green;">🎉 Your job search should now work!</p>
+                `;
+                
+            } catch (error) {
+                console.error('CORS test failed:', error);
+                resultDiv.innerHTML = `
+                    <h2 style="color: red;">❌ CORS Test Failed</h2>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+        }
+        
+        // Run test when page loads
+        window.addEventListener('load', testCORS);
+    </script>
+</body>
+</html>

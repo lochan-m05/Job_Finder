@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Search - Job Discovery Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen py-6">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">
+                    🔍 Job Search
+                </h1>
+                <p class="text-lg text-gray-600">
+                    Search for jobs using hashtags and keywords
+                </p>
+            </div>
+
+            <!-- Search Form -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Search Jobs</h2>
+                
+                <div class="space-y-4">
+                    <!-- Search Query -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Search Query
+                        </label>
+                        <input type="text" id="searchQuery" 
+                               placeholder="e.g., python developer, #react #frontend, #bca #fresher"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+
+                    <!-- Hashtags for Scraping -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Hashtags for Scraping (comma-separated)
+                        </label>
+                        <input type="text" id="hashtags" 
+                               placeholder="e.g., #python, #javascript, #bca, #fresher"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+
+                    <!-- Time Filter -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Time Filter
+                        </label>
+                        <select id="timeFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="1h">Last Hour</option>
+                            <option value="24h" selected>Last 24 Hours</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d">Last 30 Days</option>
+                        </select>
+                    </div>
+
+                    <!-- Sources -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Sources
+                        </label>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="inline-flex items-center">
+                                <input type="checkbox" id="linkedin" checked class="form-checkbox h-4 w-4 text-blue-600">
+                                <span class="ml-2 text-sm text-gray-700">LinkedIn</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="checkbox" id="naukri" checked class="form-checkbox h-4 w-4 text-blue-600">
+                                <span class="ml-2 text-sm text-gray-700">Naukri</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="checkbox" id="indeed" checked class="form-checkbox h-4 w-4 text-blue-600">
+                                <span class="ml-2 text-sm text-gray-700">Indeed</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="checkbox" id="twitter" class="form-checkbox h-4 w-4 text-blue-600">
+                                <span class="ml-2 text-sm text-gray-700">Twitter</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="flex gap-4">
+                        <button onclick="searchJobs()" 
+                                class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                            🔍 Search Existing Jobs
+                        </button>
+                        <button onclick="startScraping()" 
+                                class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                            🕷️ Start New Scraping
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div id="results" class="hidden bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 class="text-xl font-semibold text-gray-900 mb-4">Results</h3>
+                <div id="resultsContent"></div>
+            </div>
+
+            <!-- Loading -->
+            <div id="loading" class="hidden bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p class="text-gray-600">Processing your request...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('results').classList.add('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        function showResults(data) {
+            const resultsDiv = document.getElementById('results');
+            const contentDiv = document.getElementById('resultsContent');
+            
+            resultsDiv.classList.remove('hidden');
+            
+            if (data.jobs && data.jobs.length > 0) {
+                contentDiv.innerHTML = `
+                    <div class="mb-4">
+                        <p class="text-sm text-gray-600">Found ${data.total} jobs</p>
+                    </div>
+                    <div class="space-y-4">
+                        ${data.jobs.map(job => `
+                            <div class="border border-gray-200 rounded-lg p-4">
+                                <h4 class="font-semibold text-lg text-gray-900">${job.title}</h4>
+                                <p class="text-gray-600">${job.company} • ${job.location}</p>
+                                <p class="text-sm text-gray-500 mt-2">${job.description}</p>
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    ${job.skills.map(skill => `
+                                        <span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">${skill}</span>
+                                    `).join('')}
+                                </div>
+                                <div class="mt-2 text-xs text-gray-500">
+                                    Source: ${job.source} • Posted: ${new Date(job.posted_at).toLocaleDateString()}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else if (data.message) {
+                contentDiv.innerHTML = `
+                    <div class="text-center py-8">
+                        <p class="text-gray-600">${data.message}</p>
+                        ${data.note ? `<p class="text-sm text-gray-500 mt-2">${data.note}</p>` : ''}
+                    </div>
+                `;
+            } else {
+                contentDiv.innerHTML = `
+                    <div class="text-center py-8">
+                        <p class="text-gray-600">No jobs found.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function getSelectedSources() {
+            const sources = [];
+            if (document.getElementById('linkedin').checked) sources.push('linkedin');
+            if (document.getElementById('naukri').checked) sources.push('naukri');
+            if (document.getElementById('indeed').checked) sources.push('indeed');
+            if (document.getElementById('twitter').checked) sources.push('twitter');
+            return sources;
+        }
+
+        async function searchJobs() {
+            const query = document.getElementById('searchQuery').value;
+            
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/jobs?q=${encodeURIComponent(query)}&limit=10`);
+                const data = await response.json();
+                
+                hideLoading();
+                showResults(data);
+            } catch (error) {
+                hideLoading();
+                showResults({
+                    message: 'Error searching jobs: ' + error.message,
+                    note: 'Make sure the backend server is running on http://127.0.0.1:8000'
+                });
+            }
+        }
+
+        async function startScraping() {
+            const hashtags = document.getElementById('hashtags').value
+                .split(',')
+                .map(tag => tag.trim())
+                .filter(tag => tag.length > 0);
+            
+            if (hashtags.length === 0) {
+                alert('Please enter at least one hashtag for scraping');
+                return;
+            }
+            
+            const timeFilter = document.getElementById('timeFilter').value;
+            const sources = getSelectedSources();
+            
+            if (sources.length === 0) {
+                alert('Please select at least one source');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/scrape-jobs`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        hashtags: hashtags,
+                        time_filter: timeFilter,
+                        sources: sources
+                    })
+                });
+                
+                const data = await response.json();
+                
+                hideLoading();
+                showResults(data);
+            } catch (error) {
+                hideLoading();
+                showResults({
+                    message: 'Error starting scraping: ' + error.message,
+                    note: 'Make sure the backend server is running on http://127.0.0.1:8000'
+                });
+            }
+        }
+
+        // Test connection on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                console.log('Backend connection:', data);
+            } catch (error) {
+                console.error('Backend connection failed:', error);
+            }
+        });
+    </script>
+</body>
+</html>
