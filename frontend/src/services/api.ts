@@ -44,12 +44,14 @@ export const apiService = {
     location?: string;
     jobType?: string;
     experienceLevel?: string;
-    salaryMin?: number;
-    salaryMax?: number;
+    salaryMin?: number | null;
+    salaryMax?: number | null;
     skills?: string[];
     sortBy?: string;
     page?: number;
     limit?: number;
+    hasContacts?: boolean;
+    remoteOnly?: boolean;
   }) {
     const queryParams = new URLSearchParams();
     

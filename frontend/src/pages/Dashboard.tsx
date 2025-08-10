@@ -252,9 +252,10 @@ const Dashboard: React.FC = () => {
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       outerRadius={80}
                       fill="#8884d8"
-                      dataKey="count"
+                       dataKey="count"
+                       nameKey="location"
                     >
-                      {locationData.map((entry: { name: string; count: number }, index: number) => (
+                      {locationData.map((entry: { location: string; count: number }, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
