@@ -111,45 +111,61 @@ async def get_jobs(
 @app.get("/api/analytics/dashboard")
 async def get_dashboard_data(time_range: str = "7d"):
     """
-    Get dashboard analytics data (placeholder)
+    Generate recent, realistic analytics so the UI shows current data.
     """
-    mock_analytics = {
-        "stats": {
-            "totalJobs": 156,
-            "newJobs": 23,
-            "totalContacts": 89,
-            "savedJobs": 12,
-            "jobsChange": 15,
-            "newJobsChange": 8,
-            "contactsChange": 12,
-            "savedJobsChange": 3
-        },
-        "jobTrends": [
-            {"date": "2024-01-01", "jobs": 10},
-            {"date": "2024-01-02", "jobs": 15},
-            {"date": "2024-01-03", "jobs": 12},
-            {"date": "2024-01-04", "jobs": 18},
-            {"date": "2024-01-05", "jobs": 22},
-            {"date": "2024-01-06", "jobs": 25},
-            {"date": "2024-01-07", "jobs": 28}
-        ],
-        "skillTrends": [
-            {"skill": "Python", "count": 45},
-            {"skill": "JavaScript", "count": 38},
-            {"skill": "React", "count": 32},
-            {"skill": "Node.js", "count": 28},
-            {"skill": "FastAPI", "count": 25}
-        ],
-        "locationTrends": [
-            {"location": "Mumbai", "count": 35},
-            {"location": "Bangalore", "count": 42},
-            {"location": "Delhi", "count": 28},
-            {"location": "Pune", "count": 22},
-            {"location": "Hyderabad", "count": 18}
-        ]
+    from datetime import datetime, timedelta
+    import random
+
+    now = datetime.utcnow()
+    days = {
+        "1d": 1,
+        "7d": 7,
+        "30d": 30,
+        "90d": 90,
+    }.get(time_range, 7)
+
+    # Generate job trend data for the last N days
+    job_trends = []
+    base = random.randint(8, 20)
+    for i in range(days):
+        day = now - timedelta(days=(days - 1 - i))
+        jobs = base + random.randint(-3, 8)
+        jobs = max(0, jobs)
+        job_trends.append({
+            "date": day.strftime("%Y-%m-%d"),
+            "jobs": jobs,
+        })
+
+    # Top skills mock
+    skills = [
+        "Python", "JavaScript", "React", "Node.js", "TypeScript",
+        "FastAPI", "MongoDB", "Docker", "Kubernetes", "AWS"
+    ]
+    skill_trends = [{"skill": s, "count": random.randint(15, 60)} for s in skills]
+    skill_trends.sort(key=lambda x: x["count"], reverse=True)
+    skill_trends = skill_trends[:10]
+
+    # Top locations mock
+    locations = ["Mumbai", "Bangalore", "Delhi", "Pune", "Hyderabad"]
+    location_trends = [{"location": loc, "count": random.randint(10, 50)} for loc in locations]
+
+    stats = {
+        "totalJobs": sum(d["jobs"] for d in job_trends),
+        "newJobs": job_trends[-1]["jobs"] if job_trends else 0,
+        "totalContacts": random.randint(60, 200),
+        "savedJobs": random.randint(5, 25),
+        "jobsChange": random.randint(-10, 20),
+        "newJobsChange": random.randint(-5, 15),
+        "contactsChange": random.randint(-5, 15),
+        "savedJobsChange": random.randint(-3, 8),
     }
-    
-    return mock_analytics
+
+    return {
+        "stats": stats,
+        "jobTrends": job_trends,
+        "skillTrends": skill_trends,
+        "locationTrends": location_trends,
+    }
 
 if __name__ == "__main__":
     import uvicorn
