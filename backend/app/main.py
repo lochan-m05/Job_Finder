@@ -76,7 +76,14 @@ async def get_jobs(
     """
     Get jobs (placeholder endpoint)
     """
-    # Mock job data for demonstration
+    # Mock job data for demonstration (timestamps are generated relative to NOW)
+    from datetime import datetime, timedelta
+    import random
+
+    now = datetime.utcnow()
+    def iso(dt):
+        return dt.replace(microsecond=0).isoformat() + "Z"
+
     mock_jobs = [
         {
             "id": "1",
@@ -85,27 +92,48 @@ async def get_jobs(
             "location": "Mumbai, India",
             "description": "We are looking for a Python developer with FastAPI experience...",
             "skills": ["Python", "FastAPI", "MongoDB"],
-            "posted_at": "2024-01-08T10:00:00Z",
-            "source": "linkedin"
+            "posted_at": iso(now - timedelta(hours=random.randint(1, 72))),
+            "source": "linkedin",
+            "salary": {"min": 700000, "max": 1200000, "currency": "INR"},
         },
         {
-            "id": "2", 
+            "id": "2",
             "title": "React Frontend Developer",
             "company": "StartupXYZ",
             "location": "Bangalore, India",
             "description": "Join our team as a React developer...",
             "skills": ["React", "TypeScript", "JavaScript"],
-            "posted_at": "2024-01-08T09:00:00Z",
-            "source": "naukri"
-        }
+            "posted_at": iso(now - timedelta(hours=random.randint(3, 96))),
+            "source": "naukri",
+            "salary": {"min": 800000, "max": 1500000, "currency": "INR"},
+        },
+        {
+            "id": "3",
+            "title": "Node.js Backend Engineer",
+            "company": "Acme Systems",
+            "location": "Delhi, India",
+            "description": "Build scalable backend services with Node.js and MongoDB...",
+            "skills": ["Node.js", "MongoDB", "Docker"],
+            "posted_at": iso(now - timedelta(hours=random.randint(6, 120))),
+            "source": "indeed",
+            "salary": {"min": 900000, "max": 1400000, "currency": "INR"},
+        },
     ]
-    
+
+    # Simple text filter for demo
+    if q:
+        q_low = q.lower()
+        mock_jobs = [j for j in mock_jobs if q_low in j["title"].lower() or q_low in j["company"].lower()]
+
+    total = len(mock_jobs)
+    mock_jobs = mock_jobs[offset: offset + limit]
+
     return {
-        "jobs": mock_jobs[:limit],
-        "total": len(mock_jobs),
+        "jobs": mock_jobs,
+        "total": total,
         "limit": limit,
         "offset": offset,
-        "note": "These are mock jobs. Connect database for real job data."
+        "note": "These are mock jobs with real-time timestamps. Connect a database for live data.",
     }
 
 @app.get("/api/analytics/dashboard")
