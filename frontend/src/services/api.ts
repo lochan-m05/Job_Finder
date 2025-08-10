@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// Default to nginx proxy path in container/runtime. Allow override via env at build-time.
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
 // Create axios instance
 export const apiClient = axios.create({
@@ -36,6 +37,7 @@ export const apiService = {
 
   // Search jobs
   async searchJobs(params: {
+    q?: string;
     hashtags?: string[];
     sources?: string[];
     timeFilter?: string;

@@ -61,13 +61,7 @@ services:
     container_name: job_discovery_frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - REACT_APP_API_URL=http://localhost:8000
-      - CHOKIDAR_USEPOLLING=true
+      - "3000:80"
     depends_on:
       - backend
     networks:
