@@ -31,7 +31,7 @@ export const apiService = {
 
   // Get dashboard data
   async getDashboardData(timeRange: string = '7d') {
-    const response = await apiClient.get(`/api/analytics/dashboard?time_range=${timeRange}`);
+    const response = await apiClient.get(`/analytics/dashboard?time_range=${timeRange}`);
     return response.data;
   },
 
@@ -66,7 +66,7 @@ export const apiService = {
       queryParams.append('offset', ((params.page - 1) * (params.limit || 20)).toString());
     }
     
-    const response = await apiClient.get(`/api/jobs?${queryParams.toString()}`);
+    const response = await apiClient.get(`/jobs?${queryParams.toString()}`);
     return response.data;
   },
 
@@ -76,13 +76,13 @@ export const apiService = {
     sources: string[];
     timeFilter: string;
   }) {
-    const response = await apiClient.post('/api/scrape-jobs', params);
+    const response = await apiClient.post('/scrape-jobs', params);
     return response.data;
   },
 
   // Get recent jobs
   async getRecentJobs(limit: number = 10) {
-    const response = await apiClient.get(`/api/jobs?limit=${limit}`);
+    const response = await apiClient.get(`/jobs?limit=${limit}`);
     return response.data.jobs;
   },
 
