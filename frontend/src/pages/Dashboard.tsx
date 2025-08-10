@@ -254,7 +254,7 @@ const Dashboard: React.FC = () => {
                       fill="#8884d8"
                       dataKey="count"
                     >
-                      {locationData.map((entry, index) => (
+                      {locationData.map((entry: { name: string; count: number }, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
