@@ -57,7 +57,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.new
     container_name: job_discovery_frontend
     restart: unless-stopped
     ports:
