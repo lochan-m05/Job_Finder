@@ -33,7 +33,9 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
 # Install ChromeDriver
 RUN CHROME_VERSION=$(google-chrome --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d'.' -f1) \
     && echo "Detected Chrome version: $CHROME_VERSION" \
-    && wget -O /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$CHROME_VERSION.0.6045.105/linux64/chromedriver-linux64.zip" \
+    && LATEST_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/latest-versions-per-milestone.json" | grep -o "\"$CHROME_VERSION\":{[^}]*}" | grep -o '"version":"[^"]*"' | cut -d'"' -f4) \
+    && echo "Latest ChromeDriver version for Chrome $CHROME_VERSION: $LATEST_VERSION" \
+    && wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/$LATEST_VERSION/linux64/chromedriver-linux64.zip" \
     && unzip /tmp/chromedriver.zip -d /tmp/ \
     && mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/ \
     && rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64 \
