@@ -66,7 +66,7 @@ const JobSearch: React.FC = () => {
     ['searchJobs', filters, sortBy, currentPage],
     () => apiService.searchJobs({ ...filters, sortBy, page: currentPage, limit: 20 }),
     {
-      enabled: false, // Don't auto-fetch, wait for user action
+      enabled: filters.hashtags.length > 0, // auto-fetch when hashtags are present (e.g., after refresh)
       keepPreviousData: true,
     }
   );
@@ -121,16 +121,8 @@ const JobSearch: React.FC = () => {
   const handleStartScraping = async () => {
     try {
       setIsSearching(true);
-      await apiService.startScraping({
-        hashtags: filters.hashtags,
-        sources: filters.sources,
-        timeFilter: filters.timeFilter,
-      });
-      
-      // Refetch results after a delay to get new data
-      setTimeout(() => {
-        refetch();
-      }, 2000);
+      // Directly fetch live results; backend scrapes on GET
+      await refetch();
     } catch (error) {
       console.error('Failed to start scraping:', error);
     } finally {

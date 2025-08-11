@@ -1,8 +1,15 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
+from typing import List
+from enum import Enum
+from datetime import datetime, timedelta
+
+# Local imports
+from app.scrapers.scraper_manager import ScraperManager
+from app.models.job import JobSource
 
 load_dotenv()
 
@@ -70,70 +77,125 @@ async def trigger_job_scraping(
 @app.get("/api/jobs")
 async def get_jobs(
     q: str = "",
+    hashtags: str | None = Query(default=None, description="Comma-separated hashtags without # (e.g. python,react)"),
+    sources: str | None = Query(default=None, description="Comma-separated sources (linkedin,naukri,indeed,twitter)"),
+    time_filter: str = Query(default="24h", description="1h, 24h, 7d, 30d"),
     limit: int = 20,
-    offset: int = 0
+    offset: int = 0,
 ):
     """
-    Get jobs (placeholder endpoint)
+    Get jobs by live scraping when hashtags are provided. Returns fresh data with real posted times.
+    Falls back to empty list when no hashtags supplied.
     """
-    # Mock job data for demonstration (timestamps are generated relative to NOW)
-    from datetime import datetime, timedelta
-    import random
 
-    now = datetime.utcnow()
-    def iso(dt):
+    def to_iso(dt: datetime) -> str:
         return dt.replace(microsecond=0).isoformat() + "Z"
 
-    mock_jobs = [
-        {
-            "id": "1",
-            "title": "Python Developer",
-            "company": "Tech Corp",
-            "location": "Mumbai, India",
-            "description": "We are looking for a Python developer with FastAPI experience...",
-            "skills": ["Python", "FastAPI", "MongoDB"],
-            "posted_at": iso(now - timedelta(hours=random.randint(1, 72))),
-            "source": "linkedin",
-            "salary": {"min": 700000, "max": 1200000, "currency": "INR"},
-        },
-        {
-            "id": "2",
-            "title": "React Frontend Developer",
-            "company": "StartupXYZ",
-            "location": "Bangalore, India",
-            "description": "Join our team as a React developer...",
-            "skills": ["React", "TypeScript", "JavaScript"],
-            "posted_at": iso(now - timedelta(hours=random.randint(3, 96))),
-            "source": "naukri",
-            "salary": {"min": 800000, "max": 1500000, "currency": "INR"},
-        },
-        {
-            "id": "3",
-            "title": "Node.js Backend Engineer",
-            "company": "Acme Systems",
-            "location": "Delhi, India",
-            "description": "Build scalable backend services with Node.js and MongoDB...",
-            "skills": ["Node.js", "MongoDB", "Docker"],
-            "posted_at": iso(now - timedelta(hours=random.randint(6, 120))),
-            "source": "indeed",
-            "salary": {"min": 900000, "max": 1400000, "currency": "INR"},
-        },
-    ]
+    def parse_posted_time(value: str | None) -> str | None:
+        if not value:
+            return None
+        text = value.strip().lower()
+        now = datetime.utcnow()
+        try:
+            if text in ("just now", "now"):
+                return to_iso(now)
+            # e.g., '2 hours ago', '3 hrs ago', '45 minutes ago', '5 days ago'
+            parts = text.split()
+            if len(parts) >= 2 and parts[0].isdigit():
+                amount = int(parts[0])
+                unit = parts[1]
+                if unit.startswith("min"):
+                    return to_iso(now - timedelta(minutes=amount))
+                if unit.startswith("hour") or unit.startswith("hr"):
+                    return to_iso(now - timedelta(hours=amount))
+                if unit.startswith("day"):
+                    return to_iso(now - timedelta(days=amount))
+                if unit.startswith("week"):
+                    return to_iso(now - timedelta(weeks=amount))
+            # Twitter ISO datetime
+            if "t" in text and ":" in text and text.endswith("z"):
+                # already ISO-like
+                return value
+        except Exception:
+            pass
+        return None
 
-    # Simple text filter for demo
+    # If no hashtags are provided, return empty dataset (frontend shows guidance)
+    hashtag_list: List[str] = []
+    if hashtags:
+        hashtag_list = [h.strip().lstrip("#") for h in hashtags.split(",") if h.strip()]
+
+    if not hashtag_list:
+        return {"jobs": [], "total": 0, "limit": limit, "offset": offset}
+
+    # Determine sources (map strings to JobSource enum)
+    default_sources = [JobSource.LINKEDIN, JobSource.NAUKRI, JobSource.INDEED, JobSource.TWITTER]
+    source_list: List[JobSource] = default_sources
+    if sources:
+        candidates = [s.strip().lower() for s in sources.split(",") if s.strip()]
+        mapped: List[JobSource] = []
+        for s in candidates:
+            try:
+                mapped.append(JobSource(s))
+            except Exception:
+                continue
+        if mapped:
+            source_list = mapped
+
+    # Run live scraping
+    manager = ScraperManager(use_proxy=True, headless=True)
+    try:
+        raw_jobs = await manager.scrape_jobs(hashtag_list, source_list, time_filter)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scraping failed: {e}")
+    finally:
+        try:
+            manager.close_all_sessions()
+        except Exception:
+            pass
+
+    # Map and filter results
+    jobs_mapped = []
+    for idx, job in enumerate(raw_jobs):
+        title = job.get("title") or "Job"
+        company = job.get("company") or ""
+        location = job.get("location") or ""
+        description = job.get("description") or job.get("snippet") or ""
+        job_url = job.get("job_url") or job.get("url") or ""
+        posted_iso = parse_posted_time(job.get("posted_time")) or to_iso(datetime.utcnow())
+        source_raw = job.get("source") or "other"
+        if isinstance(source_raw, Enum):
+            source_str = source_raw.value
+        else:
+            source_str = str(source_raw)
+
+        jobs_mapped.append({
+            "id": f"{hash(job_url) ^ hash(title) ^ hash(company)}",
+            "title": title,
+            "company": company,
+            "location": location,
+            "description": description,
+            "skills": job.get("skills") or [],
+            "posted_at": posted_iso,
+            "source": source_str,
+            # normalize a simple salary view when available
+            "salary": job.get("salary") if isinstance(job.get("salary"), dict) else None,
+            "job_url": job_url,
+        })
+
+    # Simple text filter and paging
     if q:
         q_low = q.lower()
-        mock_jobs = [j for j in mock_jobs if q_low in j["title"].lower() or q_low in j["company"].lower()]
+        jobs_mapped = [j for j in jobs_mapped if q_low in j["title"].lower() or q_low in j["company"].lower()]
 
-    total = len(mock_jobs)
-    mock_jobs = mock_jobs[offset: offset + limit]
+    total = len(jobs_mapped)
+    paged = jobs_mapped[offset: offset + limit]
 
     return {
-        "jobs": mock_jobs,
+        "jobs": paged,
         "total": total,
         "limit": limit,
         "offset": offset,
-        "note": "These are mock jobs with real-time timestamps. Connect a database for live data.",
     }
 
 @app.get("/api/analytics/dashboard")
