@@ -90,8 +90,14 @@ export const apiService = {
 
   // Get recent jobs
   async getRecentJobs(limit: number = 10) {
-    const response = await apiClient.get(`/jobs?limit=${limit}`);
+    const response = await apiClient.get(`/jobs/recent?limit=${limit}`);
     return response.data.jobs;
+  },
+
+  // Notifications
+  async getNotifications() {
+    const response = await apiClient.get('/notifications');
+    return response.data.notifications || [];
   },
 
   // Get saved jobs (mock)

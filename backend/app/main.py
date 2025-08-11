@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
-from typing import List
+from typing import List, Dict, Any
 from enum import Enum
 from datetime import datetime, timedelta
 
@@ -29,6 +29,15 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# In-memory state for last scrape to power dashboard/notifications without DB
+RECENT_STATE: Dict[str, Any] = {
+    "jobs": [],
+    "hashtags": [],
+    "sources": [],
+    "time_filter": "24h",
+    "updated_at": None,
+}
 
 # CORS middleware
 app.add_middleware(
@@ -181,6 +190,11 @@ async def get_jobs(
             # normalize a simple salary view when available
             "salary": job.get("salary") if isinstance(job.get("salary"), dict) else None,
             "job_url": job_url,
+            # contact fields if available
+            "recruiter_name": job.get("recruiter_name"),
+            "recruiter_email": job.get("recruiter_email"),
+            "recruiter_phone": job.get("recruiter_phone"),
+            "recruiter_linkedin": job.get("recruiter_linkedin"),
         })
 
     # Simple text filter and paging
@@ -191,6 +205,18 @@ async def get_jobs(
     total = len(jobs_mapped)
     paged = jobs_mapped[offset: offset + limit]
 
+    # Update in-memory cache for dashboard/notifications
+    try:
+        RECENT_STATE.update({
+            "jobs": jobs_mapped,
+            "hashtags": hashtag_list,
+            "sources": [s.value if isinstance(s, Enum) else str(s) for s in source_list],
+            "time_filter": time_filter,
+            "updated_at": to_iso(datetime.utcnow()),
+        })
+    except Exception:
+        pass
+
     return {
         "jobs": paged,
         "total": total,
@@ -198,64 +224,139 @@ async def get_jobs(
         "offset": offset,
     }
 
+@app.get("/api/jobs/recent")
+async def get_recent_jobs(limit: int = 10):
+    jobs = RECENT_STATE.get("jobs", [])
+    return {"jobs": jobs[: max(0, min(limit, len(jobs)))]}
+
 @app.get("/api/analytics/dashboard")
 async def get_dashboard_data(time_range: str = "7d"):
-    """
-    Generate recent, realistic analytics so the UI shows current data.
-    """
-    from datetime import datetime, timedelta
-    import random
+    """Compute analytics from the most recent live scrape (in-memory)."""
+    from collections import Counter
 
+    jobs = RECENT_STATE.get("jobs", [])
+    if not jobs:
+        return {
+            "stats": {
+                "totalJobs": 0,
+                "newJobs": 0,
+                "totalContacts": 0,
+                "savedJobs": 0,
+                "jobsChange": 0,
+                "newJobsChange": 0,
+                "contactsChange": 0,
+                "savedJobsChange": 0,
+            },
+            "jobTrends": [],
+            "skillTrends": [],
+            "locationTrends": [],
+        }
+
+    # Trends by day (limit by time_range days)
+    days_map = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
+    days = days_map.get(time_range, 7)
     now = datetime.utcnow()
-    days = {
-        "1d": 1,
-        "7d": 7,
-        "30d": 30,
-        "90d": 90,
-    }.get(time_range, 7)
 
-    # Generate job trend data for the last N days
-    job_trends = []
-    base = random.randint(8, 20)
+    def date_only(dt_iso: str) -> str:
+        try:
+            d = datetime.fromisoformat(dt_iso.replace("Z", "+00:00"))
+            return d.date().isoformat()
+        except Exception:
+            return now.date().isoformat()
+
+    counts_by_date: Dict[str, int] = {}
     for i in range(days):
-        day = now - timedelta(days=(days - 1 - i))
-        jobs = base + random.randint(-3, 8)
-        jobs = max(0, jobs)
-        job_trends.append({
-            "date": day.strftime("%Y-%m-%d"),
-            "jobs": jobs,
-        })
+        day = (now - timedelta(days=(days - 1 - i))).date().isoformat()
+        counts_by_date[day] = 0
 
-    # Top skills mock
-    skills = [
-        "Python", "JavaScript", "React", "Node.js", "TypeScript",
-        "FastAPI", "MongoDB", "Docker", "Kubernetes", "AWS"
-    ]
-    skill_trends = [{"skill": s, "count": random.randint(15, 60)} for s in skills]
-    skill_trends.sort(key=lambda x: x["count"], reverse=True)
-    skill_trends = skill_trends[:10]
+    for j in jobs:
+        d = date_only(j.get("posted_at") or RECENT_STATE.get("updated_at") or now.isoformat())
+        if d in counts_by_date:
+            counts_by_date[d] += 1
 
-    # Top locations mock
-    locations = ["Mumbai", "Bangalore", "Delhi", "Pune", "Hyderabad"]
-    location_trends = [{"location": loc, "count": random.randint(10, 50)} for loc in locations]
+    job_trends = [{"date": d, "jobs": counts_by_date[d]} for d in sorted(counts_by_date.keys())]
+
+    # Skills
+    skill_counter = Counter()
+    for j in jobs:
+        for s in j.get("skills", []) or []:
+            skill_counter[s] += 1
+    skill_trends = [{"skill": k, "count": v} for k, v in skill_counter.most_common(10)]
+
+    # Locations
+    loc_counter = Counter()
+    for j in jobs:
+        loc = (j.get("location") or "").strip() or "Unknown"
+        loc_counter[loc] += 1
+    locationTrends = [{"location": k, "count": v} for k, v in loc_counter.most_common(5)]
+
+    # Contacts found
+    total_contacts = 0
+    for j in jobs:
+        if j.get("recruiter_email") or j.get("recruiter_phone"):
+            total_contacts += 1
+
+    # New jobs today
+    cutoff = now - timedelta(days=1)
+    def is_recent(dt_iso: str) -> bool:
+        try:
+            d = datetime.fromisoformat((dt_iso or "").replace("Z", "+00:00"))
+            return d >= cutoff
+        except Exception:
+            return False
+
+    new_jobs = sum(1 for j in jobs if is_recent(j.get("posted_at")))
 
     stats = {
-        "totalJobs": sum(d["jobs"] for d in job_trends),
-        "newJobs": job_trends[-1]["jobs"] if job_trends else 0,
-        "totalContacts": random.randint(60, 200),
-        "savedJobs": random.randint(5, 25),
-        "jobsChange": random.randint(-10, 20),
-        "newJobsChange": random.randint(-5, 15),
-        "contactsChange": random.randint(-5, 15),
-        "savedJobsChange": random.randint(-3, 8),
+        "totalJobs": len(jobs),
+        "newJobs": new_jobs,
+        "totalContacts": total_contacts,
+        "savedJobs": 0,
+        # No previous baseline in-memory; return zeros for changes
+        "jobsChange": 0,
+        "newJobsChange": 0,
+        "contactsChange": 0,
+        "savedJobsChange": 0,
     }
 
     return {
         "stats": stats,
         "jobTrends": job_trends,
         "skillTrends": skill_trends,
-        "locationTrends": location_trends,
+        "locationTrends": locationTrends,
     }
+
+@app.get("/api/notifications")
+async def get_notifications():
+    jobs = RECENT_STATE.get("jobs", [])
+    hashtags = RECENT_STATE.get("hashtags", [])
+    updated_at = RECENT_STATE.get("updated_at")
+
+    if not jobs:
+        return {"notifications": []}
+
+    # Compose simple notifications from last scrape
+    contact_count = sum(1 for j in jobs if j.get("recruiter_email") or j.get("recruiter_phone"))
+    job_count = len(jobs)
+
+    tags_text = " ".join(f"#{t}" for t in hashtags[:5])
+    notifications = []
+    notifications.append({
+        "id": "n1",
+        "title": "New Jobs Found",
+        "message": f"{job_count} jobs found for {tags_text}",
+        "time": updated_at or "just now",
+        "type": "info",
+    })
+    if contact_count:
+        notifications.append({
+            "id": "n2",
+            "title": "Contacts Extracted",
+            "message": f"{contact_count} postings with contact details",
+            "time": updated_at or "just now",
+            "type": "success",
+        })
+    return {"notifications": notifications}
 
 if __name__ == "__main__":
     import uvicorn

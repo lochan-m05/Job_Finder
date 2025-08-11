@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { apiService } from '../../services/api';
 import {
   MagnifyingGlassIcon,
   BookmarkIcon,
@@ -15,39 +16,44 @@ interface Activity {
 }
 
 const RecentActivity: React.FC = () => {
-  // Mock activity data
-  const activities: Activity[] = [
-    {
-      id: '1',
-      type: 'search',
-      description: 'Searched for #python #developer jobs',
-      timestamp: '2 hours ago',
-    },
-    {
-      id: '2',
-      type: 'save',
-      description: 'Saved Python Developer at TechCorp',
-      timestamp: '4 hours ago',
-    },
-    {
-      id: '3',
-      type: 'view',
-      description: 'Viewed React Developer job details',
-      timestamp: '6 hours ago',
-    },
-    {
-      id: '4',
-      type: 'contact',
-      description: 'Extracted contact for HR Manager',
-      timestamp: '1 day ago',
-    },
-    {
-      id: '5',
-      type: 'search',
-      description: 'Searched for #react #frontend jobs',
-      timestamp: '1 day ago',
-    },
-  ];
+  const [activities, setActivities] = useState<Activity[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const recent = await apiService.getRecentJobs(5);
+        const notifications = await apiService.getNotifications();
+
+        const act: Activity[] = [];
+
+        if (notifications && notifications.length > 0) {
+          for (const n of notifications.slice(0, 3)) {
+            act.push({
+              id: n.id,
+              type: n.title.toLowerCase().includes('contact') ? 'contact' : 'search',
+              description: n.message,
+              timestamp: n.time || 'just now',
+            });
+          }
+        }
+
+        for (const j of (recent || [])) {
+          act.push({
+            id: j.id,
+            type: 'view',
+            description: `Discovered ${j.title} at ${j.company}`,
+            timestamp: j.posted_at ? new Date(j.posted_at).toLocaleString() : 'recently',
+          });
+        }
+
+        if (isMounted) setActivities(act.slice(0, 5));
+      } catch (_) {
+        if (isMounted) setActivities([]);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
 
   const getIcon = (type: string) => {
     switch (type) {

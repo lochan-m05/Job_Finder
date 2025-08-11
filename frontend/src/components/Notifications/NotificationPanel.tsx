@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { apiService } from '../../services/api';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 interface NotificationPanelProps {
@@ -6,29 +7,20 @@ interface NotificationPanelProps {
 }
 
 const NotificationPanel: React.FC<NotificationPanelProps> = ({ onClose }) => {
-  const notifications = [
-    {
-      id: '1',
-      title: 'New Jobs Found',
-      message: '5 new Python developer jobs found for your search',
-      time: '2 hours ago',
-      type: 'info',
-    },
-    {
-      id: '2',
-      title: 'Contact Extracted',
-      message: 'Successfully extracted recruiter contact for TechCorp',
-      time: '4 hours ago',
-      type: 'success',
-    },
-    {
-      id: '3',
-      title: 'Search Complete',
-      message: 'Your hashtag search for #react #frontend has completed',
-      time: '6 hours ago',
-      type: 'info',
-    },
-  ];
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const data = await apiService.getNotifications();
+        if (isMounted) setNotifications(data || []);
+      } catch (_) {
+        if (isMounted) setNotifications([]);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
