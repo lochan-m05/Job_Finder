@@ -56,38 +56,117 @@ class BaseScraper(ABC):
         return random.choice(self.proxies)
     
     def _setup_driver(self) -> webdriver.Chrome:
-        """Setup Chrome driver with anti-detection measures"""
+        """Setup Chromium-based driver with anti-detection measures and Brave support"""
         options = Options()
-        
+
         if self.headless:
-            options.add_argument("--headless")
-        
+            options.add_argument("--headless=new")
+
         # Anti-detection options
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-extensions")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-        
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-infobars")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"]) 
+        options.add_experimental_option("useAutomationExtension", False)
+
         # Set random user agent
         user_agent = self.user_agent.random
         options.add_argument(f"--user-agent={user_agent}")
-        
+
         # Proxy setup
         if self.use_proxy:
             proxy = self._get_random_proxy()
             if proxy:
                 proxy_str = f"{proxy['host']}:{proxy['port']}"
                 options.add_argument(f"--proxy-server=http://{proxy_str}")
-        
-        # Use undetected chromedriver
-        driver = uc.Chrome(options=options)
-        
+
+        # Try to detect Brave or custom Chromium binary
+        browser_binary_path = self._detect_chromium_binary()
+        if browser_binary_path:
+            # For Selenium (and uc) this is how we point to Brave/Chromium
+            options.binary_location = browser_binary_path
+
+        # Prefer undetected-chromedriver, fallback to stock Selenium driver
+        try:
+            driver = uc.Chrome(options=options, browser_executable_path=browser_binary_path) if browser_binary_path else uc.Chrome(options=options)
+        except Exception:
+            # Fallback: Selenium Manager will try to resolve the appropriate driver
+            driver = webdriver.Chrome(options=options)
+
         # Execute script to avoid detection
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
+        try:
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        except Exception:
+            pass
+
         return driver
+
+    def _detect_chromium_binary(self) -> Optional[str]:
+        """Detect Brave/Chromium binary across platforms. Honors env overrides.
+
+        Environment variables checked (in order):
+        - BROWSER_BINARY (absolute path)
+        - BRAVE_PATH (absolute path)
+        - CHROME_PATH (absolute path)
+        - BROWSER ("brave"|"chrome"|"chromium") influences candidate list
+        """
+        # Explicit env path overrides
+        explicit = os.getenv("BROWSER_BINARY") or os.getenv("BRAVE_PATH") or os.getenv("CHROME_PATH")
+        if explicit and os.path.isfile(explicit):
+            return explicit
+
+        browser_pref = (os.getenv("BROWSER") or "").strip().lower()
+
+        candidates: list[str] = []
+
+        if os.name == "nt":  # Windows
+            program_files = os.environ.get("ProgramFiles", r"C:\\Program Files")
+            program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\\Program Files (x86)")
+
+            brave_paths = [
+                rf"{program_files}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
+                rf"{program_files_x86}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
+            ]
+            chrome_paths = [
+                rf"{program_files}\\Google\\Chrome\\Application\\chrome.exe",
+                rf"{program_files_x86}\\Google\\Chrome\\Application\\chrome.exe",
+            ]
+
+            if browser_pref == "brave":
+                candidates += brave_paths + chrome_paths
+            elif browser_pref in ("chrome", "chromium"):
+                candidates += chrome_paths + brave_paths
+            else:
+                candidates += brave_paths + chrome_paths
+
+        elif os.name == "posix":
+            # macOS or Linux
+            # macOS
+            candidates += [
+                "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            ]
+            # Linux
+            candidates += [
+                "/usr/bin/brave-browser",
+                "/usr/bin/brave",
+                "/snap/bin/brave",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+            ]
+
+        for path in candidates:
+            try:
+                if os.path.isfile(path):
+                    return path
+            except Exception:
+                continue
+
+        return None
     
     def start_session(self):
         """Initialize scraping session"""
